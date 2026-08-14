@@ -9,6 +9,10 @@ streamlit run app.py
 
 Opens with the bundled dataset already loaded. Upload any other CSV from the sidebar.
 
+![Dashboard](docs/screenshots/dashboard.png)
+
+![Lead detail](docs/screenshots/lead-detail.png)
+
 ---
 
 ## What's lightweight about it
@@ -130,14 +134,6 @@ Point the column mapping at different headers and the same system reads a differ
 Five pages: **Dashboard** (triage outcome, score distribution, stage × budget matrix, enquiry types, problems, channel quality), **Leads** (filter, search, sort, click through, export), **Lead detail** (the note with evidence highlighted, every extracted signal with its quote, the full score breakdown, contradictions, what wasn't stated), **Data quality** (parse rate and return codes per field, with example inputs), **Configuration** (live YAML editing).
 
 Band colours were validated for colour-vision deficiency (worst adjacent ΔE 11.2 deutan, normal-vision ΔE 15.2); every band mark also carries a text label, so identity is never colour alone.
-
-**Dashboard** — triage outcome, score distribution, stage × budget matrix, routing.
-
-![Dashboard](docs/screenshots/dashboard.png)
-
-**Lead detail** — the note with evidence highlighted, and a full score breakdown with a reason for every point.
-
-![Lead detail](docs/screenshots/lead-detail.png)
 
 ---
 
