@@ -1,0 +1,176 @@
+# =============================================================================
+# Scoring & triage. The NLP answers "what does the note say"; this file answers
+# "how much does that matter". Every number here is editable without touching
+# a line of Python — that separation is the whole point (guide §10).
+#
+# Score = intent points + fit points + quality points, then routed by
+# intent_type and clamped to that route's ceiling.
+# =============================================================================
+version: 1
+
+bands:
+  # Evaluated top-down; first threshold met wins.
+  - {name: "CONTACT_NOW", min_score: 82, colour: "#0E6B45", label: "Contact now"}
+  - {name: "CONSIDER",    min_score: 50, colour: "#93C51D", label: "Consider"}
+  - {name: "NURTURE",     min_score: 22, colour: "#C25A0F", label: "Nurture"}
+  - {name: "DISQUALIFY",  min_score: -999, colour: "#7A8076", label: "Disqualify"}
+
+# -----------------------------------------------------------------------------
+# Intent-type routing. A non-purchase enquiry is NOT automatically dead — it is
+# capped, and tagged with where it should actually go.
+# -----------------------------------------------------------------------------
+# max_band is a ceiling, min_band is a floor. The floor is what stops a
+# non-purchase enquiry from silently collapsing into DISQUALIFY just because
+# it scores badly on a scale built for buyers: it is not dead, it belongs to
+# a different team. Routes with no min_band (spam, competitors) have no floor.
+intent_routing:
+  PURCHASE:     {max_band: "CONTACT_NOW", route: "Sales",        multiplier: 1.0}
+  UNKNOWN:      {max_band: "CONSIDER",    route: "Sales",        multiplier: 0.85}
+  PARTNERSHIP:  {max_band: "CONSIDER",    min_band: "CONSIDER", route: "Partnerships", multiplier: 0.6,
+                 note: "Not a direct buyer, but a channel worth a conversation."}
+  RESEARCH:     {max_band: "NURTURE",     min_band: "NURTURE",  route: "Marketing",    multiplier: 0.4,
+                 note: "Analyst/press contact — brand value, not pipeline."}
+  EDUCATIONAL:  {max_band: "NURTURE",     min_band: "NURTURE",  route: "Community",    multiplier: 0.3,
+                 note: "Student or self-learner. Send resources; may convert years out."}
+  COMPETITIVE:  {max_band: "DISQUALIFY",  route: "None",         multiplier: 0.0,
+                 note: "Competitor doing price discovery."}
+  EMPLOYMENT:   {max_band: "DISQUALIFY",  route: "Recruiting",   multiplier: 0.0,
+                 note: "Job applicant — forward to hiring, not to sales."}
+  VENDOR_PITCH: {max_band: "DISQUALIFY",  route: "None",         multiplier: 0.0,
+                 note: "Selling to us."}
+  SPAM:         {max_band: "DISQUALIFY",  route: "None",         multiplier: 0.0,
+                 note: "Automated or fraudulent."}
+
+# -----------------------------------------------------------------------------
+# Intent points. UNKNOWN is deliberately 0, never negative (guide §9).
+# -----------------------------------------------------------------------------
+intent_weights:
+  budget_status:
+    APPROVED: 16
+    ALLOCATED: 13
+    BUDGETED: 10
+    NOT_LOCKED: 4
+    PRICE_SENSITIVE: -4
+    NO_BUDGET: -12
+    UNKNOWN: 0
+
+  urgency:
+    VERY_HIGH: 18
+    HIGH: 15
+    MODERATE: 8
+    LOW: 1
+    NEGATIVE: -10
+    UNKNOWN: 0
+
+  buying_stage:
+    PURCHASE: 18
+    DECISION: 14
+    EVALUATION: 10
+    EXPLORATION: 5
+    AWARENESS: 1
+    UNKNOWN: 0
+
+  decision_authority:
+    EXPLICIT: 12
+    LIKELY: 8
+    INFLUENCER: 4
+    NONE: -5
+    UNKNOWN: 0
+
+  pain_severity:
+    CRITICAL: 12
+    HIGH: 10
+    MODERATE: 5
+    LOW: 1
+    UNKNOWN: 0
+
+  problem_recognition:
+    STRONG: 8
+    MODERATE: 5
+    WEAK: 1
+    NONE: -3
+    UNKNOWN: 0
+
+  competitive_evaluation:
+    # Being in a bake-off is a real evaluation signal, not a loss.
+    "YES": 5
+    "NO": 2
+    UNKNOWN: 0
+
+# Extra credit for a named, actionable problem.
+problem_identified_bonus: 4
+# Multiply the whole intent block by the NLP's confidence, floored here, so a
+# barely-legible note cannot score like a clear one.
+confidence_floor: 0.55
+
+# -----------------------------------------------------------------------------
+# Company / role fit.
+# -----------------------------------------------------------------------------
+fit_weights:
+  employee_band:
+    solo: -6
+    micro: 0
+    small: 6
+    mid: 10
+    large: 7
+    unknown: 0
+
+  is_icp_agency:
+    true: 8
+    false: -6
+    unknown: 0
+
+  source_quality_points: 8      # multiplied by the 0-1 source quality score
+
+  budget_vs_floor:
+    # Structured monthly_budget column, compared against the price floor.
+    floor: 5000
+    above_floor: 10
+    at_floor: 6
+    below_floor: -8
+    unknown: 0
+
+  non_buyer_title: -15
+
+# -----------------------------------------------------------------------------
+# Data quality. Small effects — a missing website should never sink a good lead.
+# -----------------------------------------------------------------------------
+quality_weights:
+  invalid_email: -6
+  freemail_email: -2
+  role_email: -1
+  missing_website: -2
+  invalid_website: -2
+  email_domain_matches_website: 3
+  missing_notes: -8
+  duplicate_lead: -5
+  missing_lead_id: -2
+
+# -----------------------------------------------------------------------------
+# Negative signals subtract by severity × this factor, and can hard-cap a lead.
+# -----------------------------------------------------------------------------
+negative_signal_penalty: 14
+
+# Codes listed here are shown on the lead but cost 0 points, because the same
+# evidence is already scored through a dimension (budget_status, urgency).
+# Without this, one sentence is charged twice.
+negative_signals_already_scored:
+  - NO_BUDGET
+  - DEFERRED
+
+hard_cap_codes:
+  NOT_A_BUYER: "DISQUALIFY"
+  JOB_SEEKER: "DISQUALIFY"
+  SPAM: "DISQUALIFY"
+  VENDOR_PITCH: "DISQUALIFY"
+  COMPETITOR: "DISQUALIFY"
+  STUDENT_OR_RESEARCH: "NURTURE"
+  PARTNERSHIP_ONLY: "CONSIDER"
+  NO_BUDGET: "NURTURE"
+  DEFERRED: "NURTURE"
+  OUT_OF_ICP: "CONSIDER"
+
+# Normalise the raw total onto 0-100 for display.
+display:
+  raw_min: -60
+  raw_max: 115

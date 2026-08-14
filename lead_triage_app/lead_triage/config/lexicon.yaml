@@ -1,0 +1,841 @@
+# =============================================================================
+# Intent lexicon — the entire vocabulary of the NLP layer lives here.
+# No business language appears in the Python code. Edit this file to retune,
+# or to point the same engine at a completely different market.
+#
+# rule fields
+#   id            unique, dotted, shown in the evidence trail
+#   dimension     one of lead_triage.nlp.schema.DIMENSIONS
+#   value         member name of that dimension's enum
+#   negated_value what this rule means when it falls under a negation scope.
+#                 Omit to suppress the signal instead of flipping it.
+#                 (Negated is NOT the same as missing — see guide §9.)
+#   strength      0..1 — how strong a reading of the dimension this is
+#   specificity   0..1 — phrase match ~0.9, bare keyword ~0.4. Breaks ties.
+#   patterns      python regex, matched against lowercased normalised text
+# =============================================================================
+version: 2
+
+settings:
+  default_strength: 0.6
+  default_specificity: 0.6
+  # A dimension resolves to UNKNOWN unless a signal beats this confidence.
+  min_signal_confidence: 0.15
+
+# -----------------------------------------------------------------------------
+# 1. INTENT TYPE — classified first, highest priority wins. This ROUTES the
+#    lead; it does not add or subtract points.
+# -----------------------------------------------------------------------------
+intent_types:
+  - id: type.spam
+    type: SPAM
+    priority: 100
+    confidence: 0.95
+    patterns:
+      - "you have won"
+      - "click here to claim"
+      - "reply stop to opt.?out"
+      - "buy (?:followers|likes)"
+      - "smm panel"
+      - "high[- ]?da backlinks"
+      - "rank #?1 guaranteed"
+      - "bulk email blast"
+      - "\\$\\d[\\d,]*,\\d{3},\\d{3}"
+      - "crypto|forex signals|casino"
+
+  - id: type.newsletter
+    type: SPAM
+    priority: 95
+    confidence: 0.9
+    patterns:
+      - "newsletter signup"
+      - "ended up in the leads sheet by mistake"
+      - "subscribed to (?:the|your) newsletter"
+
+  - id: type.employment
+    type: EMPLOYMENT
+    priority: 90
+    confidence: 0.95
+    patterns:
+      - "looking for a (?:role|job|position|placement)"
+      - "attaching my (?:cv|resume)"
+      - "are you hiring"
+      - "i'?d love to join your team"
+      - "any (?:openings|vacancies|roles)"
+      - "apply(?:ing)? for a (?:role|job|position)"
+      - "seeking employment"
+      - "open to work"
+
+  - id: type.staffing_pitch
+    type: VENDOR_PITCH
+    priority: 88
+    confidence: 0.9
+    patterns:
+      - "place candidates with you"
+      - "devs? on our bench"
+      - "offering offshore dev"
+      - "offshore (?:dev|development) team"
+      - "hire our (?:developers|team)"
+      - "staff augmentation"
+
+  - id: type.vendor_pitch
+    type: VENDOR_PITCH
+    priority: 85
+    confidence: 0.88
+    patterns:
+      - "selling a .{0,30}service"
+      - "we sell "
+      - "dm for rates"
+      - "interested\\?$"
+      - "want to partner\\?"
+      - "at \\$\\d+/hr"
+      - "offering .{0,25}(?:service|team|package)"
+
+  - id: type.educational
+    type: EDUCATIONAL
+    priority: 80
+    confidence: 0.92
+    patterns:
+      - "final[- ]year (?:student|project)"
+      - "(?:university|uni|school|college) project"
+      - "(?:cs|computer science|engineering) student"
+      - "\\bstudent\\b"
+      - "bootcamp grad"
+      - "doing a project on"
+      - "for my (?:thesis|dissertation|coursework|assignment)"
+      - "free (?:template|material|resources|mentorship)"
+      - "just learning"
+      - "can you share how you built"
+      - "wanting to learn"
+
+  - id: type.research
+    type: RESEARCH
+    priority: 70
+    confidence: 0.85
+    patterns:
+      - "journalist"
+      - "writing (?:an? )?(?:article|piece|report) about"
+      - "looking for a quote"
+      - "can i interview"
+      - "researching the market"
+      - "market research"
+      - "analyst covering"
+      - "not a client"
+
+  - id: type.competitive
+    type: COMPETITIVE
+    priority: 75
+    confidence: 0.9
+    patterns:
+      - "(?:i|we) (?:actually )?run a competing"
+      - "competing (?:automation )?agency"
+      - "fellow agency owner"
+      - "we do similar work"
+      - "seeing how you package your offer"
+      - "for benchmarking"
+      - "pricing for benchmark"
+      - "competitor"
+
+  - id: type.partnership
+    type: PARTNERSHIP
+    priority: 60
+    confidence: 0.85
+    patterns:
+      - "\\bvc here\\b"
+      - "intro you to .{0,20}portfolio compan"
+      - "not a direct buyer"
+      - "partner(?:ship)? (?:with|opportunity)"
+      - "refer(?:ral)? partnership"
+      - "white[- ]label(?:ling)? (?:for|with)"
+      - "reseller"
+      - "collaborat(?:e|ion) rather than"
+
+  - id: type.purchase
+    type: PURCHASE
+    priority: 10
+    confidence: 0.6
+    patterns:
+      - "want (?:it|this) automated"
+      - "want(?:s|ing)? to automate"
+      - "looking (?:in)?to automat"
+      - "interested in automating"
+      - "exploring automating"
+      - "curious about automating"
+      - "budget"
+      - "want to (?:add|embed|build)"
+      - "we'?re an? .{0,30}agency"
+      - "want(?:s|ing)? (?:a|an) .{0,25}(?:chatbot|automation|system|tool|dev)"
+      - "wanting to automate"
+      - "need(?:s)? (?:help|this|an?)\\b"
+
+# -----------------------------------------------------------------------------
+# 2. DIMENSION RULES
+# -----------------------------------------------------------------------------
+rules:
+
+  # --- BUYING STAGE (the single progression ladder) ------------------------
+  - id: stage.implementation
+    dimension: buying_stage
+    value: PURCHASE
+    strength: 1.0
+    specificity: 0.95
+    patterns:
+      - "ready to (?:pilot|start|go|sign|proceed|kick off)"
+      - "want (?:it|this) automated end to end"
+      - "let'?s (?:start|begin|get going)"
+      - "send (?:the|a) (?:contract|proposal|sow|invoice)"
+      - "when can (?:you|we) start"
+      - "happy to (?:proceed|move forward)"
+      - "green ?light"
+
+  - id: stage.decision
+    dimension: buying_stage
+    value: DECISION
+    strength: 0.9
+    specificity: 0.9
+    patterns:
+      - "decision (?:in|this|next) "
+      - "decision is mine"
+      - "deciding (?:this|next|in) "
+      - "shortlist(?:ed|ing)?"
+      - "final(?:ising|izing) (?:a|the|our) (?:choice|vendor|decision)"
+      - "this is (?:my|our) priority to solve"
+      - "keen to move fast"
+      - "want to start this month"
+      - "priority for the quarter"
+
+  - id: stage.evaluation
+    dimension: buying_stage
+    value: EVALUATION
+    strength: 0.85
+    specificity: 0.9
+    patterns:
+      - "comparing (?:a )?few (?:options|providers|vendors)"
+      - "comparing (?:options|providers|vendors|quotes)"
+      - "looking at (?:different|several|a few) (?:providers|options|vendors)"
+      - "evaluating"
+      - "getting quotes"
+      - "reviewing proposals"
+      - "would need to loop in the team"
+      - "need to (?:run|take) (?:it|this) (?:by|past) "
+      - "demo"
+      - "trial"
+
+  - id: stage.exploration
+    dimension: buying_stage
+    value: EXPLORATION
+    strength: 0.65
+    specificity: 0.8
+    patterns:
+      - "looking into automat"
+      - "exploring automat"
+      - "interested in automat"
+      - "want(?:s|ing)? to automate"
+      - "want(?:s|ing)? to (?:add|embed) an? "
+      - "scoping"
+      - "figuring out (?:what|how)"
+      - "want to understand"
+      - "considering"
+
+  - id: stage.awareness
+    dimension: buying_stage
+    value: AWARENESS
+    strength: 0.45
+    specificity: 0.8
+    patterns:
+      - "curious about"
+      - "not totally sure what we need"
+      - "vague on scope"
+      - "just (?:looking|browsing|reading)"
+      - "would love to learn"
+      - "want to (?:know|hear) more"
+      - "learn more"
+      - "early days"
+
+  # --- BUDGET STATUS -------------------------------------------------------
+  - id: budget.approved
+    dimension: budget_status
+    value: APPROVED
+    negated_value: NO_BUDGET
+    strength: 1.0
+    specificity: 0.95
+    patterns:
+      - "budget (?:is |has been |was )?approved"
+      - "approved (?:the )?budget"
+      - "signed off (?:on )?(?:the )?(?:budget|spend)"
+      - "budget (?:is )?locked in"
+      - "funding (?:is )?approved"
+
+  - id: budget.allocated
+    dimension: budget_status
+    value: ALLOCATED
+    negated_value: NO_BUDGET
+    strength: 0.85
+    specificity: 0.9
+    patterns:
+      - "money to spend"
+      - "funds? (?:are |is )?(?:available|set aside|ready)"
+      - "budget (?:is )?(?:available|set aside|ring[- ]?fenced|allocated)"
+      - "we can (?:afford|invest|spend)"
+      - "willing to (?:invest|spend|pay)"
+
+  - id: budget.budgeted
+    dimension: budget_status
+    value: BUDGETED
+    negated_value: NO_BUDGET
+    strength: 0.75
+    specificity: 0.85
+    patterns:
+      - "\\bbudgeted\\b"
+      - "real budget"
+      - "serious budget"
+      - "have (?:some |a )?budget"
+      - "there is budget"
+      - "budget in place"
+      - "budget for this"
+
+  - id: budget.deferred
+    dimension: budget_status
+    value: NOT_LOCKED
+    strength: 0.97
+    specificity: 0.97
+    patterns:
+      # "no budget UNTIL next quarter" means deferred, not absent. This must
+      # outrank budget.none, which would otherwise read the same clause.
+      - "(?:no|not have|don'?t have|haven'?t got|without) (?:a |any |the )?budget (?:until|till|before|from)"
+      - "budget (?:opens|frees|comes) up (?:in|next|from)"
+      - "budget (?:in|from|next) (?:the )?(?:next )?(?:quarter|month|year|q[1-4])"
+      - "no budget (?:right now|yet|at the moment)(?=,? but)"
+
+  - id: budget.not_locked
+    dimension: budget_status
+    value: NOT_LOCKED
+    strength: 0.7
+    specificity: 0.95
+    patterns:
+      - "budget (?:is )?not locked"
+      - "budget (?:is )?not (?:yet )?(?:confirmed|finalised|finalized|fixed|set)"
+      - "budget (?:is )?tbd"
+      - "won'?t share budget"
+      - "wont share budget"
+      - "depends what you can do"
+      - "budget (?:depends|flexible|open)"
+      - "no fixed budget"
+
+  - id: budget.price_sensitive
+    dimension: budget_status
+    value: PRICE_SENSITIVE
+    strength: 0.7
+    specificity: 0.9
+    patterns:
+      - "price sensitive"
+      - "tight budget"
+      - "tiny budget"
+      - "small budget"
+      - "limited budget"
+      - "budget (?:is )?(?:way )?(?:below|under) (?:range|market)"
+      - "(?:cheap|cheapest|low[- ]cost|affordable|budget) (?:option|solution|chatbot|tool|service)"
+      - "what'?s the cheapest"
+      - "one[- ]man shop"
+      - "shoestring"
+
+  - id: budget.none
+    dimension: budget_status
+    value: NO_BUDGET
+    strength: 0.95
+    specificity: 0.95
+    patterns:
+      - "no (?:real )?budget"
+      - "can'?t (?:really )?(?:pay|afford)"
+      - "cannot (?:pay|afford)"
+      - "zero budget"
+      - "no money"
+      - "not able to pay"
+      - "free (?:only|please)"
+      - "budget of 0\\b"
+
+  # --- URGENCY -------------------------------------------------------------
+  - id: urgency.very_high
+    dimension: urgency
+    value: VERY_HIGH
+    strength: 1.0
+    specificity: 0.95
+    patterns:
+      - "\\basap\\b"
+      - "immediately"
+      - "right away"
+      - "this week"
+      - "urgent"
+      - "yesterday"
+      - "as soon as possible"
+
+  - id: urgency.high
+    dimension: urgency
+    value: HIGH
+    strength: 0.85
+    specificity: 0.9
+    patterns:
+      - "(?:in|within|next) (?:the )?(?:next )?(?:1|2|two|a couple of|few) weeks?"
+      - "this month"
+      - "by (?:the )?end of (?:the )?month"
+      - "ready to start"
+      - "keen to move fast"
+      - "move fast"
+      - "start (?:in|within) \\d+ weeks?"
+      - "decision this month"
+
+  - id: urgency.moderate
+    dimension: urgency
+    value: MODERATE
+    strength: 0.6
+    specificity: 0.85
+    patterns:
+      - "(?:in |about |around )?a month"
+      - "next month"
+      - "next quarter"
+      - "this quarter"
+      - "for the quarter"
+      - "in (?:the )?(?:next )?(?:6|8|12) weeks"
+      - "(?:in|within) \\d+ months?"
+      - "by q[1-4]"
+
+  - id: urgency.low
+    dimension: urgency
+    value: LOW
+    strength: 0.5
+    specificity: 0.85
+    patterns:
+      - "maybe later"
+      - "eventually"
+      - "some ?day"
+      - "at some point"
+      - "down the line"
+      - "in (?:the )?future"
+      - "later (?:this|next) year"
+      - "next year"
+      - "no rush"
+      - "when we'?re ready"
+
+  - id: urgency.negative
+    dimension: urgency
+    value: NEGATIVE
+    strength: 0.9
+    specificity: 0.95
+    patterns:
+      - "no (?:immediate )?plans"
+      - "not (?:planning|looking) to (?:buy|start|move)"
+      - "nothing planned"
+      - "not right now"
+      - "on hold"
+      - "paused"
+
+  # --- PAIN SEVERITY -------------------------------------------------------
+  - id: pain.critical
+    dimension: pain_severity
+    value: CRITICAL
+    strength: 1.0
+    specificity: 0.95
+    patterns:
+      - "losing (?:clients|revenue|money|deals)"
+      - "bleeding"
+      - "can'?t keep up"
+      - "breaking (?:down|point)"
+      - "at capacity"
+      - "drowning"
+      - "crisis"
+      - "costing us \\$"
+
+  - id: pain.high
+    dimension: pain_severity
+    value: HIGH
+    strength: 0.85
+    specificity: 0.9
+    patterns:
+      - "eating (?:our|my|up) (?:week|time|day|days)"
+      - "eats (?:our|my) (?:week|time)"
+      - "go(?:es)? stale"
+      - "flooded"
+      - "overwhelmed"
+      - "huge (?:time )?(?:sink|drain|waste)"
+      - "hours (?:every|a|per) (?:day|week)"
+      - "biggest (?:problem|bottleneck|pain)"
+      - "priority to solve"
+      - "(?:is|as) an? (?:top |big |real )?priority"
+      - "\\bpriority\\b"
+      - "bottleneck"
+
+  - id: pain.moderate
+    dimension: pain_severity
+    value: MODERATE
+    strength: 0.6
+    specificity: 0.85
+    patterns:
+      - "manual(?:ly)?"
+      - "by hand"
+      - "one by one"
+      - "copy[- ]?pasting"
+      - "repetitive"
+      - "time[- ]consuming"
+      - "tedious"
+      - "slow(?:s us down)?"
+      - "inefficien"
+      - "across (?:dozens|\\d+\\+?) (?:of )?(?:accounts|tools|clients)"
+
+  - id: pain.low
+    dimension: pain_severity
+    value: LOW
+    strength: 0.4
+    specificity: 0.75
+    patterns:
+      - "would be nice"
+      - "minor (?:issue|annoyance)"
+      - "not a big deal"
+      - "small (?:improvement|tweak)"
+
+  # --- PROBLEM RECOGNITION -------------------------------------------------
+  - id: problem.strong
+    dimension: problem_recognition
+    value: STRONG
+    strength: 0.95
+    specificity: 0.9
+    patterns:
+      - "is eating our week"
+      - "we'?re a .{0,40}agency, \\d+ people"
+      - "our (?:biggest|main|core) (?:problem|issue|challenge)"
+      - "the problem is"
+      - "we struggle with"
+      - "we (?:currently )?(?:do|handle) .{0,30}manually"
+
+  - id: problem.moderate
+    dimension: problem_recognition
+    value: MODERATE
+    strength: 0.7
+    specificity: 0.85
+    patterns:
+      - "(?:want|need)(?:s|ing)? to automate"
+      - "want (?:it|this) automated"
+      - "looking (?:in)?to automating"
+      - "interested in automating"
+      - "exploring automating"
+      - "want(?:s|ing)? to (?:add|embed)"
+
+  - id: problem.weak
+    dimension: problem_recognition
+    value: WEAK
+    strength: 0.45
+    specificity: 0.8
+    patterns:
+      - "curious about"
+      - "not totally sure what we need"
+      - "vague on scope"
+      - "interested but"
+      - "would love to learn"
+
+  - id: problem.none
+    dimension: problem_recognition
+    value: NONE
+    strength: 0.8
+    specificity: 0.9
+    patterns:
+      - "not looking for (?:help|a solution)"
+      - "no (?:particular )?(?:problem|issue|need)"
+      - "everything (?:is )?fine"
+
+  # --- DECISION AUTHORITY --------------------------------------------------
+  - id: authority.explicit
+    dimension: decision_authority
+    value: EXPLICIT
+    strength: 1.0
+    specificity: 0.95
+    patterns:
+      - "i make the call"
+      - "decision is mine"
+      - "i (?:can )?sign off"
+      - "i'?m the decision[- ]maker"
+      - "my call"
+      - "i own (?:this|the) (?:budget|decision)"
+      - "i decide"
+
+  - id: authority.influencer
+    dimension: decision_authority
+    value: INFLUENCER
+    strength: 0.7
+    specificity: 0.9
+    patterns:
+      - "would need to loop in the team"
+      - "loop in (?:my|the) (?:team|boss|partner|co[- ]?founder)"
+      - "need to (?:check|run it by|discuss) with"
+      - "recommend(?:ing)? (?:it|this) (?:to|internally)"
+      - "i'?ll (?:take|bring) (?:it|this) to"
+      - "our (?:ceo|founder|md) (?:will|would) decide"
+
+  - id: authority.none
+    dimension: decision_authority
+    value: NONE
+    strength: 0.75
+    specificity: 0.95
+    patterns:
+      - "not sure who signs off"
+      - "don'?t know who (?:decides|owns)"
+      - "i don'?t make (?:that|the) (?:call|decision)"
+      - "not my decision"
+      - "no say in"
+
+  # --- COMPETITIVE EVALUATION ---------------------------------------------
+  - id: competitive.yes
+    dimension: competitive_evaluation
+    value: "YES"
+    negated_value: "NO"
+    strength: 0.9
+    specificity: 0.9
+    patterns:
+      - "comparing (?:a )?few (?:options|providers|vendors)"
+      - "comparing (?:options|providers|vendors)"
+      - "looking at (?:different|other|several) (?:providers|options|vendors|agencies)"
+      - "talking to (?:a few|other|several) (?:agencies|vendors|providers)"
+      - "getting (?:other )?quotes"
+      - "shortlist"
+      - "vs\\.? (?:your )?competitors?"
+
+  - id: competitive.no
+    dimension: competitive_evaluation
+    value: "NO"
+    strength: 0.7
+    specificity: 0.9
+    patterns:
+      - "you'?re our first (?:choice|call|option)"
+      - "only talking to you"
+      - "came (?:straight )?to you"
+      - "not (?:looking at|talking to) (?:anyone|others)"
+
+# -----------------------------------------------------------------------------
+# 3. NEGATIVE SIGNALS — extracted with a REASON, never as a silent low score.
+# -----------------------------------------------------------------------------
+negative_signals:
+  - code: NOT_A_BUYER
+    reason: "States explicitly that they are not buying"
+    severity: 1.0
+    patterns:
+      - "not looking to buy"
+      - "not a (?:direct )?buyer"
+      - "not a (?:client|customer)"
+      - "not (?:here )?to buy"
+      - "won'?t be (?:buying|purchasing)"
+      - "not interested"
+
+  - code: NO_BUDGET
+    reason: "States they have no budget or cannot pay"
+    severity: 0.9
+    patterns:
+      - "no (?:real )?budget"
+      - "can'?t (?:really )?(?:pay|afford)"
+      - "cannot (?:pay|afford)"
+      - "budget (?:way )?below (?:range|market)"
+      - "zero budget"
+
+  - code: JOB_SEEKER
+    reason: "Looking for employment, not a service"
+    severity: 1.0
+    patterns:
+      - "looking for a (?:role|job|position)"
+      - "attaching my (?:cv|resume)"
+      - "are you hiring"
+      - "join your team"
+      - "any openings"
+
+  - code: STUDENT_OR_RESEARCH
+    reason: "Academic or research enquiry, not a commercial one"
+    severity: 0.95
+    patterns:
+      - "\\bstudent\\b"
+      - "final[- ]year"
+      - "(?:university|uni|college|school) project"
+      - "bootcamp grad"
+      - "for my (?:thesis|dissertation|project|coursework)"
+      - "just learning"
+      - "free (?:template|material|resources|mentorship)"
+
+  - code: COMPETITOR
+    reason: "Works for a competing provider"
+    severity: 1.0
+    patterns:
+      - "competing (?:automation )?agency"
+      - "fellow agency owner"
+      - "we do similar work"
+      - "for benchmarking"
+      - "how you package your offer"
+
+  - code: VENDOR_PITCH
+    reason: "Selling to us rather than buying"
+    severity: 1.0
+    patterns:
+      - "we sell "
+      - "selling a"
+      - "dm for rates"
+      - "place candidates"
+      - "offshore dev"
+      - "devs? on our bench"
+      - "want to partner\\?"
+      - "at \\$\\d+/hr"
+
+  - code: SPAM
+    reason: "Automated or fraudulent submission"
+    severity: 1.0
+    patterns:
+      - "you have won"
+      - "click here to claim"
+      - "reply stop"
+      - "buy (?:followers|likes)"
+      - "backlinks"
+      - "smm panel"
+      - "newsletter signup"
+      - "by mistake"
+
+  - code: PARTNERSHIP_ONLY
+    reason: "Wants a partnership or introduction, not to purchase"
+    severity: 0.7
+    patterns:
+      - "not a direct buyer"
+      - "\\bvc here\\b"
+      - "intro you to"
+      - "portfolio compan"
+
+  - code: OUT_OF_ICP
+    reason: "Explicitly outside the target customer profile"
+    severity: 0.5
+    patterns:
+      - "not an agency"
+      - "not your usual client"
+      - "small local business"
+      - "car dealership"
+      - "solo consultant"
+      - "freelance(?:r)? marketer"
+      - "one[- ]man shop"
+
+  - code: DEFERRED
+    reason: "Interested but explicitly postponing"
+    severity: 0.6
+    patterns:
+      - "maybe later"
+      - "not right now"
+      - "circle back (?:next|in)"
+      - "revisit (?:next|in)"
+
+# -----------------------------------------------------------------------------
+# 4. TIMELINE — explicit horizons only. Enthusiasm is not a timeline (guide §5).
+# -----------------------------------------------------------------------------
+timeline:
+  - pattern: "\\basap\\b|immediately|right away|as soon as possible"
+    label: "ASAP"
+    days: 3
+  - pattern: "this week|within (?:the )?week"
+    label: "This week"
+    days: 7
+  - pattern: "(?:next |in |within )?(?:the )?(?:next )?(?:2|two|a couple of) weeks"
+    label: "2 weeks"
+    days: 14
+  - pattern: "start (?:in|within) (\\d+) weeks?"
+    label: "{0} weeks"
+    days_from_group: 1
+    multiplier: 7
+  - pattern: "this month|by (?:the )?end of (?:the )?month|decision this month"
+    label: "This month"
+    days: 30
+  - pattern: "(?:in |about |around )a month"
+    label: "About a month"
+    days: 30
+  - pattern: "next month"
+    label: "Next month"
+    days: 45
+  - pattern: "(?:next|this) quarter|for the quarter|by q[1-4]"
+    label: "This/next quarter"
+    days: 90
+  - pattern: "(?:in|within) (\\d+) months?"
+    label: "{0} months"
+    days_from_group: 1
+    multiplier: 30
+  - pattern: "next year|later this year"
+    label: "Next year"
+    days: 270
+  - pattern: "maybe later|eventually|some ?day|at some point|down the line"
+    label: "Unspecified / later"
+    days: 365
+
+# -----------------------------------------------------------------------------
+# 5. PROBLEM TAXONOMY — what the lead actually wants solved (guide §5).
+# -----------------------------------------------------------------------------
+problems:
+  - id: lead_routing
+    label: "Lead routing"
+    category: "Lead management"
+    patterns: ["lead routing", "routing (?:of )?leads", "route (?:hot )?leads", "leads go stale", "assign leads"]
+
+  - id: lead_qualification
+    label: "Lead qualification"
+    category: "Lead management"
+    patterns: ["qualif(?:y|ying) (?:inbound )?leads", "before they hit the reps", "lead qualification", "screening leads"]
+
+  - id: lead_enrichment
+    label: "Lead enrichment & scoring"
+    category: "Lead management"
+    patterns: ["enrich(?:ing)? and scoring", "enrich(?:ing|ment) leads", "scoring leads", "lead enrichment", "one by one"]
+
+  - id: crm_data_movement
+    label: "CRM data movement"
+    category: "Data & CRM"
+    patterns: ["between apollo and the crm", "moving leads between", "into (?:the )?crm", "crm data", "hubspot", "salesforce", "pipedrive"]
+
+  - id: spreadsheet_workflows
+    label: "Spreadsheet → CRM workflows"
+    category: "Data & CRM"
+    patterns: ["copy[- ]?pasting data between", "spreadsheets? (?:and|to|into)", "google sheets?", "excel"]
+
+  - id: call_summarisation
+    label: "Call summarisation"
+    category: "Comms automation"
+    patterns: ["summari[sz]ing call", "call recordings", "call notes", "meeting notes", "transcri"]
+
+  - id: followup_automation
+    label: "Follow-up automation"
+    category: "Comms automation"
+    patterns: ["chasing follow[- ]?ups", "follow[- ]?up automation", "following up", "nurture sequence"]
+
+  - id: email_whatsapp
+    label: "Email / WhatsApp automation"
+    category: "Comms automation"
+    patterns: ["across email and whatsapp", "whatsapp", "email automation", "email and sms"]
+
+  - id: inbox_triage
+    label: "Shared inbox triage"
+    category: "Comms automation"
+    patterns: ["shared inbox", "triaging a flooded", "inbox triage", "flooded inbox"]
+
+  - id: prospect_research
+    label: "Prospect research & first-touch"
+    category: "Outbound"
+    patterns: ["researching prospects", "first[- ]touch messag", "drafting .{0,20}messages", "outreach", "prospect research"]
+
+  - id: ad_ops
+    label: "Ad budget pacing"
+    category: "Media ops"
+    patterns: ["pacing ad budgets", "ad budgets? across", "media buying automation", "campaign pacing"]
+
+  - id: client_reporting
+    label: "Client reporting"
+    category: "Reporting"
+    patterns: ["client reports?", "stitching together reporting", "reporting for \\d+\\+? clients", "across \\d+ tools every week", "dashboards?"]
+
+  - id: internal_tools
+    label: "Internal tools / embedded dev"
+    category: "Build"
+    patterns: ["internal (?:ai )?tools", "embed(?:ded)? a dev", "embed a dev", "internal tooling"]
+
+  - id: ai_service_line
+    label: "New AI service line"
+    category: "Build"
+    patterns: ["ai service line", "add an ai service", "resell(?:ing)? (?:ai|automation)", "offer (?:ai|automation) to (?:our )?clients"]
+
+  - id: chatbot
+    label: "Chatbot / conversational agent"
+    category: "Build"
+    patterns: ["chat ?bot", "lead chatbot", "conversational agent", "ai assistant on (?:our|the) site"]

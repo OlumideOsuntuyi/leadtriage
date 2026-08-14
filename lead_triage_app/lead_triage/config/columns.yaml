@@ -1,0 +1,124 @@
+# =============================================================================
+# Column mapping and per-field parse policy.
+# Point this at any CSV: change the `source` names, leave the canonical
+# `field` names alone, and the rest of the system keeps working.
+# =============================================================================
+version: 1
+
+dataset:
+  default_path: "data/default_leads.csv"
+  encoding: "utf-8"
+  # Rows whose lead_id or source matches these are dropped as instrumentation.
+  drop_rows_matching:
+    lead_id: ["header", "testrow", "asdf", "test"]
+    source: ["test", "source"]
+
+# canonical field -> accepted source column names (first match wins, case-insensitive)
+mapping:
+  lead_id:        ["lead_id", "id", "lead id", "leadid", "ref"]
+  created:        ["created", "created_at", "date", "submitted", "timestamp"]
+  name:           ["name", "contact", "full_name", "contact_name"]
+  email:          ["email", "email_address", "e-mail"]
+  company:        ["company", "organisation", "organization", "account"]
+  employees:      ["employees", "headcount", "company_size", "size", "staff"]
+  website:        ["website", "site", "url", "domain", "web"]
+  title:          ["title", "job_title", "role", "position"]
+  source:         ["source", "channel", "lead_source", "utm_source"]
+  monthly_budget: ["monthly_budget", "budget", "spend", "monthly budget"]
+  notes:          ["notes", "note", "message", "comments", "enquiry", "description"]
+
+parsing:
+  amount:
+    range_policy: "avg"          # min | max | avg
+    default_currency: "USD"
+    assume_period: "month"
+    normalise_to_monthly: true
+    min_plausible: 1
+    max_plausible: 5000000
+
+  date:
+    fallback_order: "month_first"
+    infer_order_from_column: true   # learn day-first vs month-first per separator
+    two_digit_year_pivot: 70
+    reject_future: false
+
+  email:
+    repair_obfuscation: true       # kunle[at]x.com -> kunle@x.com
+    reject_freemail: false
+    flag_role: true
+
+  lead_id:
+    pattern: '^(?P<prefix>[A-Za-z]{1,5})?[\s_-]*(?P<number>\d+)(?:[\s_-]+(?P<suffix>[A-Za-z0-9_-]+))?$'
+    canonical_format: "{prefix}-{number}"
+    default_prefix: "L"
+    invalid_sort_last: true
+
+  website:
+    default_scheme: "https"
+    strip_www: true
+
+# -----------------------------------------------------------------------------
+# Structured-field interpretation used by the scoring engine.
+# -----------------------------------------------------------------------------
+employees:
+  # "35-55", "19+", "4+", "1" all appear in the source data.
+  bands:
+    - {name: "solo",       min: 1,   max: 1}
+    - {name: "micro",      min: 2,   max: 9}
+    - {name: "small",      min: 10,  max: 24}
+    - {name: "mid",        min: 25,  max: 74}
+    - {name: "large",      min: 75,  max: 999999}
+
+titles:
+  # Mapped to a decision-authority level the NLP treats as *inferred* only —
+  # anything the lead says explicitly always overrides this.
+  authority:
+    EXPLICIT: []
+    LIKELY:
+      ["ceo", "founder", "co-founder", "owner", "managing director", "md",
+       "managing partner", "partner", "coo", "cto", "president", "principal"]
+    INFLUENCER:
+      ["head of ops", "head of growth", "head of revops", "vp growth", "vp ops",
+       "director of ops", "director", "head of", "vp ", "marketing manager",
+       "operations manager", "consultant"]
+    NONE:
+      ["student", "intern", "recruiter", "developer", "engineer", "freelancer",
+       "job seeker", "candidate"]
+
+  # Roles that are structurally not buyers of this service.
+  non_buyer: ["student", "recruiter", "developer", "intern", "journalist", "candidate"]
+
+sources:
+  # Relative quality of the acquisition channel.
+  quality:
+    referral: 1.0
+    linkedin: 0.8
+    event: 0.7
+    "cold reply": 0.6
+    webform: 0.5
+    unknown: 0.4
+
+icp:
+  # The target customer: marketing/growth agencies with real headcount.
+  positive_company_patterns:
+    - "agency"
+    - "marketing"
+    - "growth"
+    - "media"
+    - "gtm"
+    - "seo"
+    - "ppc"
+    - "demand gen"
+    - "outbound"
+    - "performance"
+    - "lead gen"
+    - "appointment.setting"
+  # Detected from the notes text rather than the company name.
+  agency_note_patterns:
+    - "we'?re an? .{0,40}agency"
+    - "\\bour (?:clients|accounts)\\b"
+    - "agency owner"
+  disqualifying_note_patterns:
+    - "not an agency"
+    - "small local business"
+    - "car dealership"

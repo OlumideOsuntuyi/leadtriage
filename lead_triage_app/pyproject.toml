@@ -1,0 +1,13 @@
+[project]
+name = "lead-triage"
+version = "1.0.0"
+description = "Explainable lead triage: parsers, rule-based intent NLP, and a configurable scoring engine."
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+app = ["streamlit>=1.40", "altair>=5.0", "pandas>=2.0"]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

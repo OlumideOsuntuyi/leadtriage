@@ -1,0 +1,10 @@
+# Core engine (lead_triage/) needs only this:
+PyYAML>=6.0
+
+# UI layer (app/) only:
+streamlit>=1.40
+altair>=5.0
+pandas>=2.0
+
+# Tests only:
+pytest>=8.0
