@@ -131,6 +131,14 @@ Five pages: **Dashboard** (triage outcome, score distribution, stage × budget m
 
 Band colours were validated for colour-vision deficiency (worst adjacent ΔE 11.2 deutan, normal-vision ΔE 15.2); every band mark also carries a text label, so identity is never colour alone.
 
+**Dashboard** — triage outcome, score distribution, stage × budget matrix, routing.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+**Lead detail** — the note with evidence highlighted, and a full score breakdown with a reason for every point.
+
+![Lead detail](docs/screenshots/lead-detail.png)
+
 ---
 
 ## Tests
